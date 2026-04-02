@@ -1,0 +1,48 @@
+services:
+  # Base image (build dependency only)
+  trackdlo-base:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.base
+      args:
+        ROS_DISTRO: ${ROS_DISTRO:-humble}
+    image: trackdlo_perception-base:latest
+    command: "true"
+
+  # Core: RealSense + perception + HSV segmentation + preview
+  trackdlo-core:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.core
+      args:
+        ROS_DISTRO: ${ROS_DISTRO:-humble}
+        BASE_IMAGE: trackdlo_perception-base:latest
+    image: trackdlo_perception-core:latest
+    container_name: trackdlo-core
+    network_mode: host
+    env_file: .env
+    environment:
+      - DISPLAY=${DISPLAY}
+      - LIBGL_ALWAYS_SOFTWARE=0
+      - SEGMENTATION=${SEGMENTATION:-hsv}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/.Xauthority:/root/.Xauthority:rw
+      - /dev:/dev
+      - ../trackdlo_bringup/rviz:/ros2_ws/install/trackdlo_bringup/share/trackdlo_bringup/rviz:ro
+      - ../trackdlo_bringup/config:/ros2_ws/install/trackdlo_bringup/share/trackdlo_bringup/config:ro
+      - ../trackdlo_bringup/launch:/ros2_ws/install/trackdlo_bringup/share/trackdlo_bringup/launch:ro
+      - ../trackdlo_utils:/ros2_ws/src/trackdlo_utils
+      - ../trackdlo_segmentation:/ros2_ws/src/trackdlo_segmentation
+    privileged: true
+    depends_on:
+      trackdlo-base:
+        condition: service_completed_successfully
+    command: >
+      bash -c "
+        cd /ros2_ws &&
+        source /opt/ros/$${ROS_DISTRO}/setup.sh &&
+        colcon build --packages-select trackdlo_utils trackdlo_segmentation &&
+        source install/setup.bash &&
+        ros2 launch trackdlo_bringup trackdlo.launch.py segmentation:=$${SEGMENTATION:-hsv}
+      "
